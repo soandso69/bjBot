@@ -76,7 +76,7 @@ class DQNAgent:
         self.adaptive_epsilon = True
         self.warmup_episodes = 500
         self.min_bet_multiplier = 0.5
-        self.conservative_threshold = 17  # New threshold for conservative play
+        self.conservative_threshold = 17
 
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
@@ -84,14 +84,31 @@ class DQNAgent:
     def act(self, state, valid_actions_mask):
         player_total = int(state[0] * 32)  # Extract player total from state
         
-        # Force stand on threshold+ during exploitation
-        if (player_total >= self.conservative_threshold and 
-            np.random.rand() > self.epsilon and 
-            len(self.episode_rewards) >= self.warmup_episodes):
-            return 1  # Stand
+        # Enhanced conservative play - force stand on high totals
+        if player_total >= 21:
+            return 1  # Always stand on 21+
+        elif player_total >= 20:
+            return 1  # Always stand on 20
+        elif player_total >= 19:
+            return 1  # Always stand on 19
+        elif player_total >= 18:
+            # Stand on 18 unless we're in exploration mode
+            if np.random.rand() > self.epsilon:
+                return 1
+        elif player_total >= self.conservative_threshold:
+            # For 17, be very conservative during exploitation
+            if (np.random.rand() > self.epsilon and 
+                len(self.episode_rewards) >= self.warmup_episodes):
+                return 1  # Stand
         
+        # Normal action selection for lower totals
         if np.random.rand() <= self.epsilon or len(self.episode_rewards) < self.warmup_episodes:
             valid_actions = [i for i, valid in enumerate(valid_actions_mask) if valid]
+            # Even in exploration, avoid hitting on dangerous totals
+            if player_total >= 17 and 0 in valid_actions and 1 in valid_actions:
+                # Heavily bias toward standing on 17+
+                if np.random.rand() < 0.8:  # 80% chance to stand even in exploration
+                    return 1
             return random.choice(valid_actions)
         
         state = torch.FloatTensor(state).unsqueeze(0)
@@ -99,6 +116,11 @@ class DQNAgent:
             q_values = self.model(state)
         valid_indices = [i for i in range(self.action_size) if valid_actions_mask[i]]
         best_action = valid_indices[torch.argmax(q_values[0, valid_indices]).item()]
+        
+        # Final safety check - don't hit on very high totals
+        if best_action == 0 and player_total >= 19:
+            return 1  # Force stand
+        
         return best_action
 
     def get_confidence(self, state, action):
@@ -213,7 +235,8 @@ def card_to_str(card):
     if card == 13: return 'K'
     return str(card)
 
-def print_game_stats(episode, agent, env, action, reward, confidence, action_history):
+def print_game_stats(episode, agent, env, action, reward, confidence, action_history, game_info):
+    """Enhanced game stats with guaranteed dealer hit display"""
     player_hands = []
     for hand in env.player_hands:
         player_hands.append(' '.join([card_to_str(card) for card in hand]))
@@ -260,13 +283,12 @@ def print_game_stats(episode, agent, env, action, reward, confidence, action_his
     print(f"Player hand: {player_hands} (Total: {env._sum_hand(env.player_hands[0]) if env.player_hands else 0})")
     print(f"Dealer hand: {dealer_hand} (Total: {env._sum_hand(env.dealer_cards)})")
 
-    # Always show dealer hits if available
-    if hasattr(env, 'last_outcome_info') and env.last_outcome_info is not None:
-        dealer_hits = env.last_outcome_info.get('dealer_hits', [])
-        if dealer_hits:
-            print(f"Dealer hits: {' '.join([card_to_str(card) for card in dealer_hits])}")
-        else:
-            print("Dealer did not hit.")
+    # Display dealer hits from game_info
+    dealer_hits = game_info.get('dealer_hits', [])
+    if dealer_hits:
+        print(f"Dealer hits: {' '.join([card_to_str(card) for card in dealer_hits])}")
+    else:
+        print("Dealer did not hit.")
 
     print(f"Action: {action_str}{action_sequence}")
     print(f"Current bet: {env.current_bet} (Bankroll: {env.bankroll})")
@@ -277,7 +299,6 @@ def print_game_stats(episode, agent, env, action, reward, confidence, action_his
     print(f"Epsilon: {agent.epsilon:.4f}")
     print(f"Time elapsed: {time.strftime('%H:%M:%S', time.gmtime(time.time() - agent.start_time))}")
     print(f"Warmup episodes remaining: {max(0, agent.warmup_episodes - len(agent.episode_rewards))}")
-
 
 def run_validation(agent, env, episodes=200):
     val_rewards = []
@@ -338,6 +359,7 @@ def train_agent():
         total_reward = 0.0
         done = False
         action_history = []
+        game_info = {}
         
         while not done:
             if env.current_hand_index >= len(env.player_hands):
@@ -371,7 +393,8 @@ def train_agent():
             
             step_return = env.step(action)
             if isinstance(step_return, tuple):
-                next_state, reward, done, _ = step_return
+                next_state, reward, done, step_info = step_return
+                game_info.update(step_info)
             else:
                 next_state, reward, done = step_return[0], step_return[1], step_return[2]
             
@@ -407,7 +430,7 @@ def train_agent():
                 agent.losses += 1
 
             if env.current_hand_index < len(env.player_hands) and (e % print_interval == 0):
-                print_game_stats(e, agent, env, action, reward, confidence, action_history)
+                print_game_stats(e, agent, env, action, reward, confidence, action_history, game_info)
             
             if len(agent.memory) > batch_size:
                 loss = agent.replay(batch_size)
