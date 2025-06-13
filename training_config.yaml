@@ -1,0 +1,30 @@
+training:
+  total_timesteps: 100
+  eval_freq: 10
+  n_eval_episodes: 100
+  save_freq: 10
+  batch_size: 16
+  learning_rate: 1.0
+  n_steps: 256
+  n_epochs: 4
+  ensemble_train_steps: 100
+  update_frequency: 10
+
+model:
+  ensemble_size: 3
+  hidden_layers: [32, 32, 16]
+  activation: "relu"
+  dropout_rate: 0.15
+  batch_size: 16
+
+betting:
+  base_bet: 0.0
+  max_bet: 100000000
+  bet_percentage: 0.01
+  kelly_fraction: 0.25
+  max_bet_multiplier: 5.0
+
+risk_management:
+  max_drawdown: 0.25
+  profit_target: 0.75
+  stop_loss: 0.25

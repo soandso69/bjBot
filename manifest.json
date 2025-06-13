@@ -1,0 +1,51 @@
+{
+    "manifest_version": 3,
+    "name": "Advanced Blackjack AI",
+    "version": "1.0",
+    "description": "AI-powered Blackjack assistant with reinforcement learning and advanced strategy",
+    "permissions": [
+        "activeTab",
+        "storage",
+        "scripting",
+        "webNavigation",
+        "webRequest"
+    ],
+    "web_accessible_resources": [
+  {
+    "resources": ["training_config.yaml"],
+    "matches": ["<all_urls>"]
+  }
+]
+,
+    "host_permissions": [
+        "https://stake.us/casino/games/blackjack/*",
+        "https://*.sharkoin.com/*",
+        "https://*.dingdingding.com/*",
+        "https://*.cafecasino.lv/*",
+        "https://*.bovada.lv/*",
+        "https://*.luckybird.io/*",
+        "ws://127.0.0.1:6789/*"
+    ],
+    "action": {
+        "default_title": "Blackjack AI",
+        "default_icon": {
+            "128": "icon/iconoff.png"
+        }
+    },
+    "icons": {
+        "128": "icon/iconon.png"
+    },
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+            {
+                "matches": [
+                    "https://stake.us/casino/games/blackjack/*"
+                ],
+               // "run_at": "document_idle", // Add this line
+    "js": ["jsyaml.min.js", "content.js"],
+    "run_at": "document_end"
+            }
+        ]
+}
