@@ -21,13 +21,14 @@ class BlackjackENV(gym.Env):
         self.insurance_taken = False
         self.last_outcome = None
         self.last_outcome_info = None
+        self.dealer_hits = []  # Track dealer hits explicitly
         
         # Enhanced betting parameters
         self.min_bet = 2
         self.max_bet = 20
         self.base_bet = 5
         self.current_bet = self.base_bet
-        self.bankroll = 2000  # Increased starting bankroll
+        self.bankroll = 2000
 
     def calculate_bet(self, confidence):
         """Conservative betting strategy with count awareness"""
@@ -128,6 +129,7 @@ class BlackjackENV(gym.Env):
         self.insurance_taken = False
         self.last_outcome = None
         self.last_outcome_info = None
+        self.dealer_hits = []  # Reset dealer hits tracking
         self.current_bet = self.base_bet
         return self._get_obs()
 
@@ -152,119 +154,21 @@ class BlackjackENV(gym.Env):
 
     def step(self, action):
         if self.done:
-            return self._get_obs(), 0.0, True, {}
+            return self._get_obs(), 0.0, True, {'dealer_hits': self.dealer_hits.copy()}
         
         current_hand = self.player_hands[self.current_hand_index]
         reward = 0.0
-        drawn_card = None
+        info = {'dealer_hits': self.dealer_hits.copy()}
 
         if action == 0:  # hit
             drawn_card = self.draw_card()
             current_hand.append(drawn_card)
+            info['drawn_card'] = drawn_card
+            
             if self._sum_hand(current_hand) > 21:
                 self.done = True
                 result = self._resolve_hand()
-                info = result[3] if len(result) > 3 else {}
-                if drawn_card:
-                    info['drawn_card'] = drawn_card
-                self.last_outcome_info = info
-                return result[0], result[1], result[2], info
-                self.last_outcome_info = result[3] if len(result) > 3 else {}
-                return result
-        elif action == 1:  # stand
-            result = self._next_or_end(0.0)
-            self.last_outcome_info = result[3] if len(result) > 3 else {}
-            return result
-        elif action == 2:  # double
-            if len(current_hand) == 2:
-                drawn_card = self.draw_card()
-                current_hand.append(drawn_card)
-                result = self._resolve_hand(double=True)
-                result[3]['drawn_card'] = drawn_card
-                self.last_outcome_info = result[3]
-                return result
-        elif action == 3:  # split
-            if len(current_hand) == 2 and current_hand[0] == current_hand[1]:
-                self.player_hands[self.current_hand_index] = [current_hand[0], self.draw_card()]
-                self.player_hands.insert(self.current_hand_index + 1, [current_hand[1], self.draw_card()])
-                return self._get_obs(), 0.0, False, {}
-        elif action == 4:  # insurance
-            self.insurance_taken = True
-            return self._get_obs(), 0.0, False, {}
-        elif action == 5:  # no insurance
-            self.insurance_taken = False
-            return self._get_obs(), 0.0, False, {}
-
-        return self._get_obs(), reward, False, {'drawn_card': drawn_card}
-
-    def _next_or_end(self, interim_reward, drawn_card=None):
-        self.current_hand_index += 1
-        if self.current_hand_index >= len(self.player_hands):
-            result = self._resolve_hand()
-            info = result[3] if len(result) > 3 else {}
-            if drawn_card:
-                info['drawn_card'] = drawn_card
-            self.last_outcome_info = info
-            return (result[0], result[1], result[2], info) if len(result) >= 3 else (self._get_obs(), interim_reward, True, info)
-        
-        info = {'drawn_card': drawn_card} if drawn_card else {}
-        self.last_outcome_info = info
-        return self._get_obs(), interim_reward, False, info
-        
-    def _resolve_hand(self, double=False):
-        dealer_hits = []
-        # Dealer stands on soft 17
-        while self._sum_hand(self.dealer_cards) < 17 or (
-            self._sum_hand(self.dealer_cards) == 17 and 
-            self._usable_ace(self.dealer_cards)
-        ):
-            card = self.draw_card()
-            self.dealer_cards.append(card)
-            dealer_hits.append(card)
-
-        dealer_total = self._sum_hand(self.dealer_cards)
-        total_reward = 0
-        multiplier = 2 if double else 1
-        outcome = None
-        insurance_payout = 0
-        self.done = True  # Make sure to set done to True when resolving the hand
-
-        # Handle insurance
-        if self.insurance_offered and self.insurance_taken:
-            if dealer_total == 21 and len(self.dealer_cards) == 2:
-                insurance_payout = 1.5 * self.current_bet
-                total_reward += insurance_payout
-                outcome = "INSURANCE_WIN"
-            else:
-                total_reward -= 0.5 * self.current_bet
-                outcome = "INSURANCE_LOSE"
-
-        # Resolve main bets
-        for hand in self.player_hands:
-            player_total = self._sum_hand(hand)
-            if player_total > 21:
-                total_reward += -1 * self.current_bet * multiplier
-                outcome = "BUST"
-            elif dealer_total > 21:
-                total_reward += 1 * self.current_bet * multiplier
-                outcome = "WIN"
-            elif player_total == 21 and len(hand) == 2:
-                if dealer_total == 21 and len(self.dealer_cards) == 2:
-                    outcome = "DRAW"
-                else:
-                    total_reward += 1.5 * self.current_bet * multiplier
-                    outcome = "BLACKJACK"
-            elif player_total > dealer_total:
-                total_reward += 1 * self.current_bet * multiplier
-                outcome = "WIN"
-            elif player_total == dealer_total:
-                outcome = "DRAW"
-
-        self.last_outcome = outcome
-        self.bankroll += total_reward
-        
-        # Always return a tuple with 4 elements (state, reward, done, info)
-        return self._get_obs(), total_reward, self.done, {
-            'outcome': outcome,
-            'dealer_hits': dealer_hits
-        }
+                # Merge info dictionaries
+                final_info = info.copy()
+                if len(result) > 3:
+                    final_info.
